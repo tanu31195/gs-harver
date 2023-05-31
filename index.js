@@ -1,4 +1,4 @@
-const { writeFile } = require('fs');
+const { writeFile } = require('fs').promises;
 const { join } = require('path');
 const axios = require('axios');
 const mergeImg = require('merge-img');
@@ -13,48 +13,44 @@ const {
   size = 100,
 } = argv;
 
-const firstReq = `https://cataas.com/cat/says/${greeting}?width=${width}&height=${height}&color=${color}&s=${size}`;
-const secondReq = `https://cataas.com/cat/says/${who}?width=${width}&height=${height}&color=${color}&s=${size}`;
+async function fetchCatImage(text) {
+  const url = `https://cataas.com/cat/says/${text}?width=${width}&height=${height}&color=${color}&s=${size}`;
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  console.log(`Received response with status: ${response.status}`);
+  return Buffer.from(response.data, 'binary');
+}
 
-axios
-  .get(firstReq, { responseType: 'arraybuffer' })
-  .then((firstRes) => {
-    console.log(`Received response with status: ${firstRes.status}`);
-    const firstBody = Buffer.from(firstRes.data, 'binary');
-
-    axios
-      .get(secondReq, { responseType: 'arraybuffer' })
-      .then((secondRes) => {
-        console.log(`Received response with status: ${secondRes.status}`);
-        const secondBody = Buffer.from(secondRes.data, 'binary');
-
-        mergeImg([
-          { src: firstBody, x: 0, y: 0 },
-          { src: secondBody, x: width, y: 0 },
-        ]).then((img) => {
-          img.getBuffer('image/jpeg', (err, buffer) => {
-            if (err) {
-              console.log(err);
-              return;
-            }
-
-            const fileOut = join(process.cwd(), `/cat-card.jpg`);
-
-            writeFile(fileOut, buffer, 'binary', (err) => {
-              if (err) {
-                console.log(err);
-                return;
-              }
-
-              console.log('The file was saved!');
-            });
-          });
-        });
-      })
-      .catch((error) => {
-        console.log(error);
-      });
-  })
-  .catch((error) => {
-    console.log(error);
+async function createMergedImage(firstBody, secondBody) {
+  const mergedImage = await mergeImg([
+    { src: firstBody, x: 0, y: 0 },
+    { src: secondBody, x: width, y: 0 },
+  ]);
+  return new Promise((resolve, reject) => {
+    mergedImage.getBuffer('image/jpeg', (err, buffer) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(buffer);
+      }
+    });
   });
+}
+
+async function saveImageToFile(buffer) {
+  const filePath = join(process.cwd(), `/cat-card.jpg`);
+  await writeFile(filePath, buffer, 'binary');
+  console.log('The file was saved!');
+}
+
+async function main() {
+  try {
+    const firstBody = await fetchCatImage(greeting);
+    const secondBody = await fetchCatImage(who);
+    const mergedImageBuffer = await createMergedImage(firstBody, secondBody);
+    await saveImageToFile(mergedImageBuffer);
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+main();
